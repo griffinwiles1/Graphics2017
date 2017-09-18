@@ -9,7 +9,7 @@
  */
 
 function valueToGray(v){
-  return "rgb(" + Math.floor(v) + "," + Math.floor(v) + "," + Math.floor(v) + ")";
+  return "rgb(" + v + "," + v + "," + v + ")";
 }
 
 function render(gamma){
@@ -24,12 +24,10 @@ function render(gamma){
     ctx.fillStyle = valueToGray(value);
     ctx.fillRect(rectIndex * RECT_WIDTH, 0, RECT_WIDTH, canvas.height);
     rectIndex++;
-	a = 0
-	a_prime = a ^ (1 / gamma) / 255
-	value += (a_prime ^ gamma)
-	a += 1 / 16
+    value += 16;
   }
 
 }
 
 window.onload = render;
+
