@@ -1,0 +1,280 @@
+<!doctype html>
+
+<html>
+	
+<head>
+	<title>Clipping lines Liang-Barsky</title>
+
+	<script type="text/javascript" src="gl-matrix.js"></script>
+	<script type="text/javascript" src="webgl-utils.js"></script>
+	
+	<script type="text/javascript" src="Point.js"></script>
+	<script type="text/javascript" src="Color.js"></script>
+	<script type="text/javascript" src="DrawUtils.js"></script>
+		
+	<script id="shader-fs" type="x-shader/x-fragment">
+	    precision mediump float;
+	    
+	    uniform vec4 uColor;
+	
+	    void main(void) {
+	        gl_FragColor = uColor;
+	    }
+	</script>
+
+	<script id="shader-vs" type="x-shader/x-vertex">
+	    attribute vec3 aVertexPosition;
+	
+	    uniform mat4 uPMatrix;
+	
+	    void main(void) {
+	        gl_Position = uPMatrix * vec4(aVertexPosition, 1.0);
+	    }
+	</script>
+	
+	<script type="text/javascript">
+		var gl;
+		
+		var shaderProgram;
+		
+		var pMatrix = mat4.create();
+		
+		var canvasWidth;
+		
+		var canvasHeight;
+		
+		function initGL(canvas) {
+			gl = WebGLUtils.setupWebGL(canvas);
+			
+			if (!gl) {
+				return;
+			}
+			
+			gl.clearColor(0.0, 0.0, 0.0, 1.0);
+			
+			canvasWidth = canvas.width;
+			
+			canvasHeight = canvas.height;
+		}
+		
+		function getShader(gl, id) {
+			var shaderScript = document.getElementById(id);
+			
+			if (!shaderScript) {
+				return null;
+			}
+	
+			var str = "";
+			
+			var k = shaderScript.firstChild;
+	        
+			while (k) {
+				if (k.nodeType == 3) {
+					str += k.textContent;
+				}
+	            
+				k = k.nextSibling;
+			}
+	
+			var shader;
+	        
+			if (shaderScript.type == "x-shader/x-fragment") {
+				shader = gl.createShader(gl.FRAGMENT_SHADER);
+			} 
+			else if (shaderScript.type == "x-shader/x-vertex") {
+				shader = gl.createShader(gl.VERTEX_SHADER);
+			} 
+			else {
+				return null;
+			}
+	
+			gl.shaderSource(shader, str);
+			
+			gl.compileShader(shader);
+	
+			if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+				alert(gl.getShaderInfoLog(shader));
+				
+				return null;
+			}
+	
+			return shader;
+		}
+
+		function initShaders() {
+			var fragmentShader = getShader(gl, "shader-fs");
+			
+			var vertexShader = getShader(gl, "shader-vs");
+	
+			shaderProgram = gl.createProgram();
+			
+			gl.attachShader(shaderProgram, vertexShader);
+			
+			gl.attachShader(shaderProgram, fragmentShader);
+			
+			gl.linkProgram(shaderProgram);
+	
+			if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+				alert("Could not initialise shaders");
+			}
+				
+			gl.useProgram(shaderProgram);
+				
+			shaderProgram.vertexPositionLoc = gl.getAttribLocation(shaderProgram, "aVertexPosition");
+			
+			gl.enableVertexAttribArray(shaderProgram.vertexPositionLoc);
+				        
+			shaderProgram.colorLoc = gl.getUniformLocation(shaderProgram, "uColor");
+			
+			shaderProgram.pMatrixLoc = gl.getUniformLocation(shaderProgram, "uPMatrix");
+		}
+		
+		var xMin = 160;
+		
+		var xMax = 480;
+		
+		var yMin = 120;
+		
+		var yMax = 360;
+		
+		var lines = [];
+		
+		var clippedLines = [];
+		
+		function clipLine(x0, y0, x1, y1) {
+		
+			//Left
+			var p1 = -(x1 - x0);
+			
+			var q1 = x0 - xMin;
+			
+			var r1 = q1/p1;
+			
+			//Right
+			var p2 = x1 - x0;
+			
+			var q2 = xMax - x0;
+			
+			var r2 = q2/p2;
+			
+			//Bottom
+			var p3 = -(y1 - y0);
+			
+			var q3 = y0 - yMin;
+			
+			var r3 = q3/p3;
+			
+			//Top
+			var p4 = y1 - y0;
+			
+			var q4 = yMax - y0;
+			
+			var r4 = q4/p4;
+			
+			//initialize t0 and t1
+			var t0 = 0;
+			
+			var t1 = 1;
+			
+			if (p1 < 0) {
+				t0 = Math.max(t0, r1);
+			} else if ( p1 > 0) {
+				t1 = Math.min(t1, r1);
+			}
+			
+			if (p2 < 0) {
+				t0 = Math.max(t0, r2);
+			} else if ( p2 > 0) {
+				t1 = Math.min(t1, r2);
+			}
+				
+			if (p3 < 0) {
+				t0 = Math.max(t0, r3);
+			} else if ( p3 > 0) {
+				t1 = Math.min(t1, r3);
+			}
+			
+			if (p4 < 0) {
+				t0 = Math.max(t0, r4);
+			} 
+			else if (p4 > 0) {
+				t1 = Math.min(t1, r4);
+			}
+			
+			if (t1 < t0) { //reject lines all the way outside the view area
+				clippedLines.push(new Point(x0, y0, 0), new Point(x1, y1, 0));
+			} 
+			
+			else { //at least partially inside view area, compute adjusted points within
+				var xt0 = x0 + t0 * (x1 - x0);
+				
+				var xt1 = x0 + t1 * (x1 - x0);
+				
+				var yt0 = y0 + t0 * (y1 - y0);
+				
+				var yt1 = y0 + t1 * (y1 - y0);
+				
+				lines.push(new Point(xt0, yt0, 0), new Point(xt1, yt1, 0)); //draw lines inside the view
+				
+				clippedLines.push(new Point(x0 , y0, 0), new Point( xt0, yt0, 0)); //clip lines above
+				
+				clippedLines.push(new Point(xt0 , yt0, 0), new Point( x1, y1, 0)); //clip lines below
+			}
+			
+		}
+		
+		function render() {
+			gl.clear(gl.COLOR_BUFFER_BIT);
+			
+			gl.uniform4f(shaderProgram.colorLoc, 0.25, 0.25, 0.25, 1.0);
+			
+			DrawUtils.drawRect(new Point(xMin, yMin, 0), new Point(xMax, yMax, 0), gl, shaderProgram.vertexPositionLoc);
+			
+			gl.uniform4f(shaderProgram.colorLoc, 1.0, 0.0, 0.0, 1.0);
+			
+			DrawUtils.drawLines(clippedLines, gl, shaderProgram.vertexPositionLoc);
+			
+			gl.uniform4f(shaderProgram.colorLoc, 1.0, 1.0, 1.0, 1.0);
+			
+			DrawUtils.drawLines(lines, gl, shaderProgram.vertexPositionLoc);
+		}
+		
+		function webGLStart() {
+			var canvas = document.getElementById("webgl_canvas");
+			
+			initGL(canvas);
+			
+			initShaders();
+			
+			mat4.ortho(0, canvasWidth, 0, canvasHeight, -1, 1, pMatrix);
+			
+			gl.uniformMatrix4fv(shaderProgram.pMatrixLoc, false, pMatrix);
+			
+			for (var i = 0; i < 50; i++) {
+				var x0 = Math.random() * canvasWidth;
+				
+				var y0 = Math.random() * canvasHeight;
+				
+				var x1 = Math.random() * canvasWidth;
+				
+				var y1 = Math.random() * canvasHeight;
+				
+				clipLine(x0, y0, x1, y1);
+			}
+			
+			render();
+		}
+	</script>
+
+</head>
+
+<body onload="webGLStart()">
+	Clipping lines against a rectangle using Liang-Barsky algorithm.<br />
+	50 random lines are generated and clipped against the 25% gray rectangle.<br />
+	Clipped portions are drawn in red.
+	<br /><br /> 
+
+	<canvas id="webgl_canvas" width="640" height="480"></canvas>
+</body>
+
+</html>
